@@ -1,0 +1,136 @@
+About
+=====
+
+RadixDatTool is a small tool i made in response to a question on
+the reverse engineering stack exchange, 
+http://reverseengineering.stackexchange.com/questions/12248/help-needed-reverse-engineer-a-dos-executable-for-a-game-mod
+
+There was an old game named Radix - Beyond the Void, and it allowed you to
+create mods containing replacement for the original artwork. However, not all
+of this is documented. The original artwork was bundled together in a file
+named radix.dat.
+
+This project  allows you to extract the radix.dat file into its individual
+parts, and it has a "viewer" that turns an Object Bitmap into ascii art.
+
+
+File Format
+===========
+
+The original radix.dat file is an archive container that has the following
+structure:
+
+HEADER
+------
+    0x00  String	"NSRes:Radix",^Z,0		13 bytes
+    0x0d  Dword?	unknown				 4 bytes
+    0x11  DWord		number of files contained	 4 bytes
+    0x15  Dword		Start of Directory		 4 bytes
+    0x19  byte stream	start of first contained file
+
+DIRECTORY
+---------
+The directory starts at the file offset denoted by the dword at position
+0x15 in the header, and it contains one entry per file. The number of files is
+stored at position 0x11 in the header. Each directory entry has 46 bytes.
+
+    0x00  String	file name			32 bytes
+    0x20  Dword		start position			 4 bytes
+    0x24  Dword		file size			 4 bytes
+    0x28  unknown	unknown				 6 bytes
+
+The file name at offset 0x00 may contain special characters like '[' that are
+not allowed on Windows systems, so when extracting the radix.dat on Windows,
+special care must be taken to rename files, which this project does not to as
+of Mar 2016.
+
+BITMAP CONTAINERS
+-----------------
+
+Two of the Files in the main archive, ObjectBitmaps and WallBitmaps, are
+containers themselves, and have an internal structure similar to the main
+container. File offsets in these subcontainers are relative to the main file,
+not the subcontainer, so these files cannot be extracted on their own.
+
+BITMAP CONTAINER HEADER
+-----------------------
+
+    0x00  Word		number of files			2 bytes
+    0x02  Dword		Directory start			4 bytes
+
+BITMAP CONTAINER DIRECTORY
+--------------------------
+
+The start of this directory is stored at position 0x02 in the bitmap container
+header. This is the absolute file offset in the radix.dat file, not an offset
+relative to the Bitmap file. Each entry has 40 bytes (not 46 like the main
+container).
+
+    0x00  String	file name			32 bytes
+    0x20  Dword		start position			 4 bytes
+    0x24  Word		width				 2 bytes
+    0x26  Word		height				 2 bytes
+
+WALL BITMAP DATA
+----------------
+
+The size of a wall bitmap is (width*height) bytes. Each byte is a palette
+entry index.
+
+OBJECT BITMAP DATA
+------------------
+
+The object bitmap data is divided into two parts. The first part has one entry
+per row, denoting the byte position within the pixel map,
+number of "empty" pixels in that row, counted from the left, and number of
+"used" pixels. The second part is the pixel map, and it has 1 byte per pixel,
+just like the wall bitmaps.
+
+For example, an object could use a 10(width)x4(height) bitmap and look like
+this:
+
+.....XXX..
+..YYXXX...
+..YYX.....
+..Z.......
+
+with X, Y and Z being different palette entries, and . being "unused", i.e.
+transparent.
+
+The bitmap format for this object would be:
+
+0000    0x10 5 3	;pixels start at 0x10, 5 unused pixels, 3 used pixels
+0004	0x13 2 5	;pixels start at 0x13, 2 unused pixels, 5 used pixels
+0008	0x18 2 3
+000C	0x1b 2 1
+0010 	58 58 58
+0013	59 59 58 58 58
+0018	59 59 58
+001b	5a
+
+Note that the size of the bitmap can, in this case, not be determined from the
+directory entry alone, as that has only width and height, not the byte size,
+which is generally much lower than (width*height).
+
+Tool usage
+===========
+
+Extracting the radix.dat file
+-----------------------------
+
+Run "java -jar RadixDatTool.jar extract /path/to/radix.dat" to extract a data
+file into its components.
+
+Warning: the destination directory is hardcoded in the source file. Adjust to
+your needs before compiling.
+Warning2: Run the command on Linux, or OS X, as on Windows, you'll run into
+problems with file names that contain [ and ] characters
+
+Showing an ascii art version of an object bitmap
+------------------------------------------------
+
+Run "java -jar RadixDatTool.jar obitmap /path/to/obitmap_file". These bitmap
+files get extracted to the ObjectBitmaps subdirectory when you run the extract
+command. As the pixel size isn't present in the binary data, the extract
+routine appends it to the file name, resulting in names like 'Nuke1-32-85'
+for the Nuke1 file which has a width of 32 and a height of 85 pixels.
